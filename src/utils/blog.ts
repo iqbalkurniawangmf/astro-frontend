@@ -4,6 +4,7 @@ import type { CollectionEntry } from 'astro:content';
 import type { Post } from '~/types';
 import { APP_BLOG } from 'astrowind:config';
 import { cleanSlug, trimSlash, BLOG_BASE, POST_PERMALINK_PATTERN, CATEGORY_BASE, TAG_BASE } from './permalinks';
+import { fetchStrapi } from './strapi';
 
 const generatePermalink = async ({
   id,
@@ -128,14 +129,60 @@ export const blogTagRobots = APP_BLOG.tag.robots;
 
 export const blogPostsPerPage = APP_BLOG?.postsPerPage;
 
-/** */
-export const fetchPosts = async (): Promise<Array<Post>> => {
-  if (!_posts) {
-    _posts = await load();
-  }
+const STRAPI_URL = import.meta.env.PUBLIC_STRAPI_URL;
 
-  return _posts;
+const extractText = (blocks: any[] = []) =>
+  blocks
+    .flatMap((b) => b.children ?? [])
+    .map((c) => c.text)
+    .join(' ')
+    .trim();
+
+/** */
+export const fetchPosts = async (): Promise<Post[]> => {
+  const res = await fetchStrapi(
+    "/posts?populate=cover&populate=category&populate=tags&populate=author&sort=publishedAt:desc"
+  );
+
+  return res.data.map((item) => {
+    const img = item.cover?.url ?? null;
+
+    return {
+      id: String(item.id),
+      slug: item.slug,
+      permalink: `/blog/${item.slug}`,
+
+      publishDate: new Date(item.publishedAt),
+      updateDate: item.updatedAt ? new Date(item.updatedAt) : undefined,
+
+      title: item.title,
+      excerpt: item.excerpt,
+
+      image: img ? `${STRAPI_URL}${img}` : undefined,
+
+      author: item.author?.name,
+
+      category: item.category
+        ? {
+            slug: item.category.slug,
+            title: item.category.name,
+          }
+        : undefined,
+
+      tags: Array.isArray(item.tags)
+        ? item.tags.map((tag) => ({
+            slug: tag.slug,
+            title: tag.name,
+          }))
+        : [],
+
+      draft: false,
+
+      content: item.content,
+    };
+  });
 };
+
 
 /** */
 export const findPostsBySlugs = async (slugs: Array<string>): Promise<Array<Post>> => {
